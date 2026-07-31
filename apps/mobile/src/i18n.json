@@ -1,0 +1,20 @@
+{
+  "hi": {
+    "brand": "Novae",
+    "tagline": "हर दिन एक नई चिंगारी",
+    "dailySpark": "आज की स्पार्क",
+    "whyMatched": "आप क्यों मैच हुए",
+    "accept": "स्वीकार करें",
+    "pass": "छोड़ें",
+    "slotsOpen": "मैच स्लॉट खुले"
+  },
+  "en": {
+    "brand": "Novae",
+    "tagline": "New spark everyday",
+    "dailySpark": "Today's Spark",
+    "whyMatched": "Why you matched",
+    "accept": "Accept",
+    "pass": "Pass",
+    "slotsOpen": "Match slots open"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "novae",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Novae — new spark everyday. Dating app with daily AI matches and capped connections.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "dev:api": "npm run start:dev -w @novae/api",
+    "dev:worker": "npm run start:dev -w @novae/worker",
+    "dev:mobile": "npm run start -w @novae/mobile",
+    "dev:admin": "npm run dev -w @novae/admin",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:migrate": "npm run migration:run -w @novae/api",
+    "db:seed": "npm run seed -w @novae/worker"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

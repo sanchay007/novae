@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Novae",
+    "slug": "novae",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "novae",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A120B"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.novae.dating"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A120B"
+      },
+      "package": "app.novae.dating"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000/v1",
+      "wsUrl": "http://localhost:3000"
+    }
+  }
+}
