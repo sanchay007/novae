@@ -19,6 +19,9 @@ type SparkResponse = {
   expiresAt?: string;
   acceptedByMe?: boolean;
   slotsRemaining?: number;
+  isPaidExtra?: boolean;
+  kind?: 'daily' | 'extra';
+  extrasPending?: number;
   profile?: {
     displayName: string;
     age: number;
@@ -117,7 +120,13 @@ export default function SparkScreen() {
       contentContainerStyle={{ padding: spacing.lg }}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.spark} />}
     >
-      <Text style={styles.kicker}>Today's Spark</Text>
+      <Text style={styles.kicker}>
+        {data.kind === 'extra' ? 'Extra Spark' : "Today's Spark"}
+        {data.isPaidExtra ? ' · paid' : ''}
+      </Text>
+      {!!data.extrasPending && data.extrasPending > 0 && data.kind !== 'extra' && (
+        <Text style={styles.meta}>{data.extrasPending} Extra Spark(s) waiting after this</Text>
+      )}
       <Text style={styles.name}>
         {p.displayName}, {p.age}
         {p.verified ? ' ✓' : ''}

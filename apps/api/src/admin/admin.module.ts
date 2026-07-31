@@ -67,6 +67,15 @@ export class AdminService {
       ),
     };
   }
+
+  async health() {
+    try {
+      await this.db.query('SELECT 1');
+      return { ok: true, db: 'up' as const };
+    } catch {
+      return { ok: false, db: 'down' as const };
+    }
+  }
 }
 
 @Injectable()
@@ -135,6 +144,12 @@ export class AdminController {
   constructor(private readonly admin: AdminService) {}
 
   @Public()
+  @Get('health')
+  health() {
+    return this.admin.health();
+  }
+
+  @Public()
   @Get('stats')
   stats() {
     return this.admin.stats();
@@ -189,15 +204,46 @@ export class FriendSparksController {
 @Controller('calls')
 export class CallsController {
   @Post('token')
-  token(
+  async token(
     @CurrentUser() user: { userId: string },
     @Body() body: { matchId: string },
   ) {
+    if (!body?.matchId) {
+      throw new BadRequestException('matchId required');
+    }
+    const room = `match-${body.matchId}`;
+    const url = process.env.LIVEKIT_URL ?? 'wss://novae-livekit.example';
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
+
+    if (apiKey && apiSecret) {
+      try {
+        const { AccessToken } = await import('livekit-server-sdk');
+        const at = new AccessToken(apiKey, apiSecret, {
+          identity: user.userId,
+          ttl: '2h',
+        });
+        at.addGrant({
+          roomJoin: true,
+          room,
+          canPublish: true,
+          canSubscribe: true,
+        });
+        const token = await at.toJwt();
+        return { provider: 'livekit', room, token, url, mode: 'live' };
+      } catch (err) {
+        console.warn('[calls] LiveKit token failed, using stub', err);
+      }
+    }
+
     return {
       provider: 'livekit',
-      room: `match-${body.matchId}`,
+      room,
       token: `dev-token-${user.userId}-${body.matchId}`,
-      url: process.env.LIVEKIT_URL ?? 'wss://novae-livekit.example',
+      url,
+      mode: 'stub',
+      message:
+        'Set LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET for real call tokens',
     };
   }
 }

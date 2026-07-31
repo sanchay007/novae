@@ -118,6 +118,17 @@ CREATE TABLE IF NOT EXISTS sparks (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Pending Extra Spark purchases fulfilled by the worker
+CREATE TABLE IF NOT EXISTS spark_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  spark_id UUID REFERENCES sparks(id),
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  fulfilled_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS matches (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_a_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -195,9 +206,12 @@ CREATE TABLE IF NOT EXISTS device_tokens (
 CREATE TABLE IF NOT EXISTS embeddings (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   embedding vector(64),
+  embedding_json JSONB,
   model TEXT NOT NULL DEFAULT 'pseudo-v1',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding_json JSONB;
 
 CREATE TABLE IF NOT EXISTS moderation_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -218,6 +232,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_location ON profiles (latitude, longitud
 CREATE INDEX IF NOT EXISTS idx_profiles_last_active ON profiles (last_active_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sparks_users_date ON sparks (user_a_id, spark_date);
 CREATE INDEX IF NOT EXISTS idx_sparks_b_date ON sparks (user_b_id, spark_date);
+CREATE INDEX IF NOT EXISTS idx_spark_requests_pending ON spark_requests (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_matches_users ON matches (user_a_id, user_b_id);
 CREATE INDEX IF NOT EXISTS idx_matches_status ON matches (status);
 CREATE INDEX IF NOT EXISTS idx_messages_match ON messages (match_id, created_at);

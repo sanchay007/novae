@@ -15,8 +15,9 @@
 ## Quick start
 
 ```bash
-# Infrastructure (Postgres + pgvector + Redis)
-docker compose up -d
+# Infrastructure
+# Preferred locally (no Docker): Homebrew postgresql@17 + pgvector + redis
+# Or: docker compose up -d  (pgvector/pg16 image)
 
 # Install
 npm install

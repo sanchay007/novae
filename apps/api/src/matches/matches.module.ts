@@ -12,6 +12,10 @@ import {
 import { swipeSchema, unmatchSchema } from '@novae/shared';
 import { CurrentUser } from '../common/auth.decorators';
 import { DatabaseService } from '../database/database.module';
+import {
+  NotificationService,
+  NotificationsModule,
+} from '../notifications/notifications.module';
 import { ProfilesService } from '../profiles/profiles.module';
 import { SparksService } from '../sparks/sparks.module';
 
@@ -21,6 +25,7 @@ export class MatchesService {
     private readonly db: DatabaseService,
     private readonly profiles: ProfilesService,
     private readonly sparks: SparksService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async list(userId: string) {
@@ -108,16 +113,6 @@ export class MatchesService {
       return { matched: false };
     }
 
-    const countA = await this.sparks.activeMatchCount(userId);
-    const countB = await this.sparks.activeMatchCount(input.targetUserId);
-    if (countA >= 3 || countB >= 3) {
-      return {
-        matched: false,
-        heldForSlot: true,
-        message: 'Mutual like — free a slot to match',
-      };
-    }
-
     const existing = (
       await this.db.query(
         `SELECT id FROM matches
@@ -127,6 +122,16 @@ export class MatchesService {
       )
     ).rows[0];
     if (existing) return { matched: true, matchId: existing.id };
+
+    const countA = await this.sparks.activeMatchCount(userId);
+    const countB = await this.sparks.activeMatchCount(input.targetUserId);
+    if (countA >= 3 || countB >= 3) {
+      return {
+        matched: false,
+        heldForSlot: true,
+        message: 'Mutual like — free a slot to match',
+      };
+    }
 
     const match = (
       await this.db.query(
@@ -139,6 +144,10 @@ export class MatchesService {
         ],
       )
     ).rows[0]!;
+    void this.notifications.notifyMatch(
+      [userId, input.targetUserId],
+      match.id,
+    );
     return { matched: true, matchId: match.id };
   }
 
@@ -203,7 +212,7 @@ import { ProfilesModule } from '../profiles/profiles.module';
 import { SparksModule } from '../sparks/sparks.module';
 
 @Module({
-  imports: [ProfilesModule, SparksModule],
+  imports: [ProfilesModule, SparksModule, NotificationsModule],
   controllers: [MatchesController],
   providers: [MatchesService],
   exports: [MatchesService],

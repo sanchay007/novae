@@ -29,10 +29,17 @@ import { Server, Socket } from 'socket.io';
 import { CurrentUser } from '../common/auth.decorators';
 import { DatabaseService } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
+import {
+  NotificationService,
+  NotificationsModule,
+} from '../notifications/notifications.module';
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly notifications: NotificationService,
+  ) {}
 
   async assertMember(matchId: string, userId: string) {
     const match = (
@@ -71,7 +78,7 @@ export class ChatService {
       clientMessageId?: string;
     },
   ) {
-    await this.assertMember(input.matchId, userId);
+    const match = await this.assertMember(input.matchId, userId);
     if (input.clientMessageId) {
       const existing = (
         await this.db.query(
@@ -98,6 +105,13 @@ export class ChatService {
     await this.db.query(
       `UPDATE matches SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`,
       [input.matchId],
+    );
+    const recipientId =
+      match.user_a_id === userId ? match.user_b_id : match.user_a_id;
+    void this.notifications.notifyMessage(
+      recipientId,
+      input.matchId,
+      input.body ?? undefined,
     );
     return message;
   }
@@ -229,7 +243,7 @@ export class ChatGateway implements OnGatewayConnection {
 }
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, NotificationsModule],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway],
   exports: [ChatService, ChatGateway],

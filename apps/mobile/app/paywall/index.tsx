@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api } from '../../src/api';
+import { purchaseExtraSparkPack, purchasePlus } from '../../src/purchases';
 import { colors, spacing } from '../../src/theme';
 
 export default function PaywallScreen() {
@@ -14,33 +15,64 @@ export default function PaywallScreen() {
     extra_sparks?: number;
   }>({});
   const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function refresh() {
+    const [prods, ents] = await Promise.all([
+      api<{ products: typeof products }>('/billing/products'),
+      api<{ is_plus?: boolean; extra_sparks?: number }>('/billing/entitlements'),
+    ]);
+    setProducts(prods.products);
+    setEntitlements(ents);
+  }
 
   useEffect(() => {
-    api<{ products: typeof products }>('/billing/products').then((r) =>
-      setProducts(r.products),
-    );
-    api('/billing/entitlements').then(setEntitlements);
+    refresh().catch(() => undefined);
   }, []);
 
-  async function grantPlus() {
-    const res = await api<{ is_plus: boolean; extra_sparks: number }>(
-      '/billing/dev/grant',
-      {
-        method: 'POST',
-        body: JSON.stringify({ plus: true, extraSparks: 3 }),
-      },
-    );
-    setEntitlements(res);
-    setStatus('Plus unlocked (dev grant). Wire RevenueCat for production IAP.');
+  async function unlockPlus() {
+    setBusy(true);
+    setStatus('');
+    try {
+      const result = await purchasePlus(() =>
+        api('/billing/dev/grant', {
+          method: 'POST',
+          body: JSON.stringify({ plus: true, extraSparks: 3 }),
+        }),
+      );
+      await refresh();
+      setStatus(result.message);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'Purchase failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function buyExtraSpark() {
-    await api('/billing/dev/grant', {
-      method: 'POST',
-      body: JSON.stringify({ extraSparks: 1 }),
-    });
-    await api('/sparks/extra', { method: 'POST', body: JSON.stringify({}) });
-    setStatus('Extra Spark credited — worker will assign soon.');
+    setBusy(true);
+    setStatus('');
+    try {
+      const result = await purchaseExtraSparkPack(() =>
+        api('/billing/dev/grant', {
+          method: 'POST',
+          body: JSON.stringify({ extraSparks: 1 }),
+        }),
+      );
+      if (result.ok) {
+        await api('/sparks/extra', { method: 'POST', body: JSON.stringify({}) });
+      }
+      await refresh();
+      setStatus(
+        result.ok
+          ? `${result.message} Worker will assign your Extra Spark shortly.`
+          : result.message,
+      );
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'Purchase failed');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -63,11 +95,13 @@ export default function PaywallScreen() {
           ))}
         </View>
       ))}
-      <Pressable style={styles.cta} onPress={grantPlus}>
-        <Text style={styles.ctaText}>Unlock Plus (dev)</Text>
+      <Pressable style={styles.cta} onPress={unlockPlus} disabled={busy}>
+        <Text style={styles.ctaText}>
+          {busy ? 'Working…' : 'Unlock Plus'}
+        </Text>
       </Pressable>
-      <Pressable style={styles.secondary} onPress={buyExtraSpark}>
-        <Text style={styles.link}>Buy extra Spark (dev)</Text>
+      <Pressable style={styles.secondary} onPress={buyExtraSpark} disabled={busy}>
+        <Text style={styles.link}>Buy Extra Spark</Text>
       </Pressable>
       <Pressable style={styles.secondary} onPress={() => router.back()}>
         <Text style={styles.link}>Close</Text>

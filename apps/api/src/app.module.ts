@@ -13,6 +13,7 @@ import { AiModule } from './ai/ai.module';
 import { BillingModule } from './billing/billing.module';
 import { SafetyModule } from './safety/safety.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Controller()
 class HealthController {
@@ -37,6 +38,7 @@ class HealthController {
     BillingModule,
     SafetyModule,
     AdminModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -42,14 +42,35 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 }
 
+function isProdLikeAdminConfig(): boolean {
+  return (
+    process.env.NODE_ENV === 'production'
+    || process.env.NOVAE_ENV === 'production'
+    || process.env.REQUIRE_ADMIN_API_KEY === 'true'
+  );
+}
+
+/** Resolves the admin API key. Fail-closed in production-like configs when unset. */
+export function resolveAdminApiKey(): string | null {
+  const configured = process.env.ADMIN_API_KEY?.trim();
+  if (configured) return configured;
+  if (isProdLikeAdminConfig()) return null;
+  return 'dev-admin-key';
+}
+
 @Injectable()
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
     const key = req.headers['x-admin-key'];
-    const expected = process.env.ADMIN_API_KEY ?? 'dev-admin-key';
-    if (key === expected) return true;
-    if (req.user?.role === 'admin') return true;
+    const expected = resolveAdminApiKey();
+    if (!expected) {
+      throw new UnauthorizedException('Admin access misconfigured');
+    }
+    // Always require x-admin-key — no JWT/role bypass.
+    if (typeof key === 'string' && key.length > 0 && key === expected) {
+      return true;
+    }
     throw new UnauthorizedException('Admin access required');
   }
 }

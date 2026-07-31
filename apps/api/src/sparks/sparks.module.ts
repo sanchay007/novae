@@ -19,6 +19,10 @@ import {
 } from '@novae/shared';
 import { CurrentUser } from '../common/auth.decorators';
 import { DatabaseService } from '../database/database.module';
+import {
+  NotificationService,
+  NotificationsModule,
+} from '../notifications/notifications.module';
 import { ProfilesModule, ProfilesService } from '../profiles/profiles.module';
 
 @Injectable()
@@ -26,6 +30,7 @@ export class SparksService {
   constructor(
     private readonly db: DatabaseService,
     private readonly profiles: ProfilesService,
+    private readonly notifications: NotificationService,
   ) {}
 
   async activeMatchCount(userId: string): Promise<number> {
@@ -39,18 +44,32 @@ export class SparksService {
 
   async getTodaySpark(userId: string) {
     await this.profiles.touchActive(userId);
+    // Prefer free Daily Spark over paid extras so extras never shadow the ritual.
     const { rows } = await this.db.query(
       `SELECT * FROM sparks
        WHERE spark_date = CURRENT_DATE
          AND (user_a_id = $1 OR user_b_id = $1)
-         AND status NOT IN ('declined')
-       ORDER BY created_at DESC LIMIT 1`,
+         AND status NOT IN ('declined', 'expired')
+       ORDER BY
+         CASE WHEN is_paid_extra THEN 1 ELSE 0 END ASC,
+         CASE
+           WHEN status IN ('pending', 'accepted_a', 'accepted_b', 'held_for_slot') THEN 0
+           ELSE 1
+         END ASC,
+         created_at DESC
+       LIMIT 5`,
       [userId],
     );
     const spark = rows[0];
+    const extras = rows.filter((r) => r.is_paid_extra);
     const slots = remainingSlots(await this.activeMatchCount(userId));
     if (!spark) {
-      return { spark: null, slotsRemaining: slots, message: 'Your Daily Spark is on the way' };
+      return {
+        spark: null,
+        slotsRemaining: slots,
+        message: 'Your Daily Spark is on the way',
+        extrasPending: 0,
+      };
     }
     const otherId = spark.user_a_id === userId ? spark.user_b_id : spark.user_a_id;
     const profile = await this.profiles.getPublicProfile(userId, otherId);
@@ -59,10 +78,15 @@ export class SparksService {
       status: spark.status,
       expiresAt: spark.expires_at,
       whyMatched: spark.why_matched,
+      isPaidExtra: !!spark.is_paid_extra,
+      kind: spark.is_paid_extra ? 'extra' : 'daily',
       acceptedByMe:
         spark.user_a_id === userId ? spark.accepted_by_a : spark.accepted_by_b,
       profile,
       slotsRemaining: slots,
+      extrasPending: extras.filter((e) =>
+        ['pending', 'accepted_a', 'accepted_b', 'held_for_slot'].includes(e.status),
+      ).length,
     };
   }
 
@@ -132,6 +156,10 @@ export class SparksService {
       )
     ).rows[0]!;
     await this.db.query(`UPDATE sparks SET status = 'matched' WHERE id = $1`, [sparkId]);
+    void this.notifications.notifyMatch(
+      [spark.user_a_id, spark.user_b_id],
+      match.id,
+    );
     return { status: 'matched', matchId: match.id, whyMatched: spark.why_matched };
   }
 
@@ -148,6 +176,22 @@ export class SparksService {
       [userId],
     );
     return { extraSparks: ent.extra_sparks - 1 };
+  }
+
+  /** Consume one Extra Spark entitlement and queue a worker fulfill job. */
+  async requestExtraSpark(userId: string) {
+    const { extraSparks } = await this.consumeExtraSpark(userId);
+    const { rows } = await this.db.query<{ id: string }>(
+      `INSERT INTO spark_requests (user_id, status)
+       VALUES ($1, 'pending') RETURNING id`,
+      [userId],
+    );
+    return {
+      ok: true,
+      requestId: rows[0]!.id,
+      extraSparks,
+      message: 'Extra Spark queued — worker will assign shortly',
+    };
   }
 
   async createSparkPair(
@@ -194,7 +238,13 @@ export class SparksService {
       await this.db.query(`UPDATE sparks SET status = 'matched' WHERE id = $1`, [
         spark.id,
       ]);
-      if (match) created.push(match.id);
+      if (match) {
+        created.push(match.id);
+        void this.notifications.notifyMatch(
+          [spark.user_a_id, spark.user_b_id],
+          match.id,
+        );
+      }
     }
     return created;
   }
@@ -225,16 +275,12 @@ export class SparksController {
 
   @Post('extra')
   async extra(@CurrentUser() user: { userId: string }) {
-    await this.sparks.consumeExtraSpark(user.userId);
-    return {
-      ok: true,
-      message: 'Extra Spark queued — worker will assign shortly',
-    };
+    return this.sparks.requestExtraSpark(user.userId);
   }
 }
 
 @Module({
-  imports: [ProfilesModule],
+  imports: [ProfilesModule, NotificationsModule],
   controllers: [SparksController],
   providers: [SparksService],
   exports: [SparksService],

@@ -25,7 +25,8 @@ export class AuthService {
   ) {}
 
   async requestOtp(phone: string) {
-    const code = this.config.get('OTP_PROVIDER') === 'mock'
+    const provider = (this.config.get<string>('OTP_PROVIDER') ?? 'mock').toLowerCase();
+    const code = provider === 'mock'
       ? '000000'
       : String(Math.floor(100000 + Math.random() * 900000));
     const codeHash = await bcrypt.hash(code, 8);
@@ -34,12 +35,80 @@ export class AuthService {
       `INSERT INTO otp_codes (phone, code_hash, expires_at) VALUES ($1, $2, $3)`,
       [phone, codeHash, expires],
     );
-    // Mock / MSG91 / Twilio would send here
+
+    if (provider === 'twilio') {
+      await this.sendTwilioOtp(phone, code);
+    } else if (provider === 'msg91') {
+      await this.sendMsg91Otp(phone, code);
+    } else if (provider !== 'mock') {
+      throw new BadRequestException(`Unsupported OTP_PROVIDER: ${provider}`);
+    }
+
     return {
       ok: true,
       message: 'OTP sent',
-      ...(this.config.get('OTP_PROVIDER') === 'mock' ? { debugCode: code } : {}),
+      provider,
+      ...(provider === 'mock' ? { debugCode: code } : {}),
     };
+  }
+
+  private async sendTwilioOtp(phone: string, code: string) {
+    const sid = this.config.get<string>('TWILIO_ACCOUNT_SID');
+    const token = this.config.get<string>('TWILIO_AUTH_TOKEN');
+    const from = this.config.get<string>('TWILIO_FROM_NUMBER');
+    if (!sid || !token || !from) {
+      throw new BadRequestException('Twilio OTP is not configured');
+    }
+    const body = new URLSearchParams({
+      To: phone,
+      From: from,
+      Body: `Your Novae code is ${code}`,
+    });
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      },
+    );
+    if (!res.ok) {
+      throw new BadRequestException(`Twilio send failed: ${await res.text()}`);
+    }
+  }
+
+  private async sendMsg91Otp(phone: string, code: string) {
+    const authKey = this.config.get<string>('MSG91_AUTH_KEY');
+    const templateId = this.config.get<string>('MSG91_TEMPLATE_ID');
+    if (!authKey) {
+      throw new BadRequestException('MSG91 OTP is not configured');
+    }
+    // phone is E.164 — MSG91 expects country + number without +
+    const mobile = phone.replace(/^\+/, '');
+    const res = await fetch('https://control.msg91.com/api/v5/flow/', {
+      method: 'POST',
+      headers: {
+        authkey: authKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        template_id: templateId,
+        recipients: [{ mobiles: mobile, OTP: code }],
+      }),
+    });
+    if (!res.ok) {
+      // Fallback simple SMS API
+      const sms = await fetch(
+        `https://api.msg91.com/api/v5/otp?template_id=${encodeURIComponent(templateId ?? '')}&mobile=${encodeURIComponent(mobile)}&authkey=${encodeURIComponent(authKey)}&otp=${encodeURIComponent(code)}`,
+        { method: 'GET' },
+      );
+      if (!sms.ok) {
+        throw new BadRequestException(`MSG91 send failed: ${await res.text()}`);
+      }
+    }
   }
 
   async verifyOtp(phone: string, code: string) {
